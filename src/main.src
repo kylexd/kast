@@ -130,7 +130,6 @@ end function
 // -----------------------------------------------------------------------------
 
 Kast.cli.command("wifi:connect", @onWifiConnect, {
-  "handler": "onWifiConnect",
   "description": "Connects to a WiFi network.",
   "usage": "kast wifi:connect [-c] [-i INTERFACE] [ID]",
   "options": [
@@ -158,13 +157,11 @@ Kast.cli.command("wifi:connect", @onWifiConnect, {
 })
 
 Kast.cli.command("wifi:clear", @onWifiClear, {
-  "handler": "onWifiClear",
   "description": "Clears the cached WiFi networks stored in the local database.",
   "usage": "kast wifi:clear",
 })
 
 Kast.cli.command("wifi:list", @onWifiList, {
-  "handler": "onWifiList",
   "description": "Lists the available WiFi networks.",
   "usage": "kast wifi:list [-a] [INTERFACE] [ID]",
   "options": [ {

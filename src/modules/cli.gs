@@ -4,6 +4,7 @@ import_code("./strings.gs")
 if not globals.hasIndex("Kast") then globals.Kast = {}
 Kast.cli = {}
 Kast.cli._commands = {}
+Kast.cli._handlers = {}
 
 // Registers a command in the CLI command registry.
 // @param name {string} Command name.
@@ -11,11 +12,22 @@ Kast.cli._commands = {}
 // @param info {map} Command metadata.
 // @return {null}
 Kast.cli.command = function(name, handler, info)
-  if info == null then info = {}
-  if not info.hasIndex("handler") then
-    exit("Error: Missing required 'handler' field for command '" + name + "'.")
+  if info == null then
+    exit("Error: Missing required info for command '" + name + "'.")
+  else if typeof(info) != "map" then
+    exit("Error: Invalid info for command '" + name + "' (expected map).")
+  else if not info.hasIndex("description") then
+    exit("Error: Missing required 'description' field for command '" + name + "'.")
+  else if not info.hasIndex("usage") then
+    exit("Error: Missing required 'usage' field for command '" + name + "'.")
+  end if
+  if @handler == null then
+    exit("Error: Missing required handler reference for command '" + name + "'.")
+  else if typeof(@handler) != "function" then
+    exit("Error: Invalid handler reference for command '" + name + "'.")
   end if
   Kast.cli._commands[name] = info
+  Kast.cli._handlers[name] = @handler
   return null
 end function
 
@@ -310,9 +322,9 @@ Kast.cli.bootstrap = function
   end if
 
   parsed = Kast.cli.parseCommandArgs(command, params[1 : ])
-  handlerName = command.handler
-  if not globals.hasIndex(handlerName) then
-    exit("Error: Handler '" + handlerName + "' is not defined.")
+  if not Kast.cli._handlers.hasIndex(commandName) then
+    exit("Error: Handler is not registered for command '" + commandName + "'.")
   end if
-  globals[handlerName](parsed.values, parsed.args)
+  handler = Kast.cli._handlers[commandName]
+  handler(parsed.values, parsed.args)
 end function
