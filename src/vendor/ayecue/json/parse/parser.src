@@ -1,0 +1,158 @@
+import_code("../character.src")
+import_code("./tokenizer.src")
+
+Parser = {}
+Parser.constructor = function(jsonStr)
+  self.tokenizer = (new Tokenizer).constructor(jsonStr)
+  self.history = []
+  self.prefetchedTokens = []
+  self.token = null
+  self.previousToken = null
+  self.errors = []
+
+  return self
+end function
+
+Parser.is = function(tokenType, tokenValue)
+  return self.token.type == tokenType and self.token.value == tokenValue
+end function
+
+Parser.isEOF = function(tokenType, tokenValue)
+  return self.token.type == TOKEN_TYPE.EOF
+end function
+
+Parser.next = function
+  if (self.previousToken) then
+    self.history.push(self.previousToken)
+  end if
+
+  self.previousToken = self.token
+  self.token = self.fetch
+
+  return self.token
+end function
+
+Parser.fetch = function
+  if (self.prefetch) then
+    return self.prefetchedTokens.pull
+  end if
+end function
+
+Parser.prefetch = function(offset = 1)
+  offsetIndex = offset - 1
+
+  while (self.prefetchedTokens.len < offset)
+    next = self.tokenizer.next
+
+    if (not next) then break
+
+    self.prefetchedTokens.push(next)
+
+    if (next.type == TOKEN_TYPE.EOF) then break
+  end while
+
+  if (offsetIndex >= 0 and offsetIndex < self.prefetchedTokens.len) then
+    return self.prefetchedTokens[offsetIndex]
+  end if
+end function
+
+Parser.handle = function(token)
+  if (token.type == TOKEN_TYPE.StringLiteral) then
+    return token.value
+  else if (token.type == TOKEN_TYPE.NumericLiteral) then
+    return token.value
+  else if (token.type == TOKEN_TYPE.BooleanLiteral) then
+    return token.value
+  else if (token.type == TOKEN_TYPE.Punctuator) then
+    if (token.value == CHARACTER.CURLY_BRACKETS_LEFT) then
+      return self.parseMap
+    else if (token.value == CHARACTER.SQUARE_BRACKETS_LEFT) then
+      return self.parseList
+    end if
+  end if
+
+  return null
+end function
+
+Parser.parseMap = function
+  output = {}
+  token = self.next
+
+  while (not self.isEOF and not self.is(TOKEN_TYPE.Punctuator, CHARACTER.CURLY_BRACKETS_RIGHT))
+    key = null
+
+    if (token.type == TOKEN_TYPE.StringLiteral) then
+      key = token.value
+      self.next
+    else
+      return self.raise("Expected string for map key", token)
+    end if
+
+    if (self.is(TOKEN_TYPE.Punctuator, CHARACTER.COLON)) then
+      token = self.next
+    else
+      return self.raise("Expected colon", self.next)
+    end if
+
+    value = self.handle(token)
+    self.next
+
+    output[key] = value
+
+    if (self.is(TOKEN_TYPE.Punctuator, CHARACTER.COMMA)) then
+      token = self.next
+    else
+      break
+    end if
+  end while
+
+  if (not self.is(TOKEN_TYPE.Punctuator, CHARACTER.CURLY_BRACKETS_RIGHT)) then
+    return self.raise("Expected right curly bracket", self.next)
+  end if
+
+  return output
+end function
+
+Parser.parseList = function
+  output = []
+  token = self.next
+
+  while (not self.isEOF and not self.is(TOKEN_TYPE.Punctuator, CHARACTER.SQUARE_BRACKETS_RIGHT))
+    value = self.handle(token)
+    self.next
+
+    output.push(value)
+
+    if (self.is(TOKEN_TYPE.Punctuator, CHARACTER.COMMA)) then
+      token = self.next
+    else
+      break
+    end if
+  end while
+
+  if (not self.is(TOKEN_TYPE.Punctuator, CHARACTER.SQUARE_BRACKETS_RIGHT)) then
+    return self.raise("Expected right square bracket", self.next)
+  end if
+  
+  return output
+end function
+
+Parser.parseBody = function
+  token = self.next
+
+  if (not token or token.type == TOKEN_TYPE.EOF) then
+    return null
+  end if
+
+  return self.handle(token)
+end function
+
+Parser.raise = function(message, token)
+  self.errors.push({
+    "message": message,
+    "line": token.line,
+    "range": token.range
+  });
+
+  return null
+end function

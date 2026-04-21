@@ -1,0 +1,12 @@
+import_code("./parse/parser.src")
+
+parse = function(jsonStr)
+  if (typeof(jsonStr) != "string") then
+    return null
+  end if
+
+  parser = (new Parser).constructor(jsonStr)
+  result = parser.parseBody
+
+  return result
+end function

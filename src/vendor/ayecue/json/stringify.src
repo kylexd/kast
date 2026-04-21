@@ -1,0 +1,17 @@
+import_code("./stringify/handler.src")
+
+stringify = function(obj)
+  objType = typeof(@obj)
+
+
+  if (@obj isa map and obj.hasIndex("toJson")) then
+    return obj.toJson
+  end if
+
+  if (StringifyHandler.hasIndex(objType)) then
+    handler = @StringifyHandler[objType]
+    return handler(@obj, @stringify)
+  end if
+
+  return StringifyHandler.default(obj)
+end function

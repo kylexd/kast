@@ -1,0 +1,42 @@
+import_code("../character.src")
+
+StringifyHandler = {}
+
+StringifyHandler["string"] = function(value, callback)
+  return CHARACTER.QUOTE + value.replace(CHARACTER.QUOTE, CHARACTER.BACKSLASH + CHARACTER.QUOTE) + CHARACTER.QUOTE
+end function
+
+StringifyHandler["number"] = function(value, callback)
+  return str(value)
+end function
+
+StringifyHandler["function"] = function(value, callback)
+  return CHARACTER.QUOTE + str(@value) + CHARACTER.QUOTE
+end function
+
+StringifyHandler["list"] = function(value, callback)
+  stringifiedItems = []
+
+  for item in value
+    stringifiedItems.push(callback(@item))
+  end for
+
+  return CHARACTER.SQUARE_BRACKETS_LEFT + stringifiedItems.join(",") + CHARACTER.SQUARE_BRACKETS_RIGHT
+end function
+
+StringifyHandler["map"] = function(value, callback)
+  stringifiedItems = []
+
+  for item in value
+    key = CHARACTER.QUOTE + str(@item.key) + CHARACTER.QUOTE
+    value = callback(@item.value)
+
+    stringifiedItems.push(key + ":" + value)
+  end for
+
+  return CHARACTER.CURLY_BRACKETS_LEFT + stringifiedItems.join(",") + CHARACTER.CURLY_BRACKETS_RIGHT
+end function
+
+StringifyHandler["default"] = function(value, callback)
+  return typeof(value)
+end function

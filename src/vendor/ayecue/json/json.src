@@ -1,0 +1,6 @@
+import_code("./stringify.src")
+import_code("./parse.src")
+
+JSON = {}
+JSON.stringify = @stringify
+JSON.parse = @parse

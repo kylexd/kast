@@ -1,0 +1,297 @@
+import_code("../character.src")
+
+TOKEN_TYPE = {
+  "EOF": 0,
+  "EOL": 1,
+  "StringLiteral": 2,
+  "NumericLiteral": 3,
+  "Punctuator": 4,
+  "BooleanLiteral": 5
+}
+
+Tokenizer = {}
+Tokenizer.constructor = function(jsonStr)
+  self.jsonStr = jsonStr
+  self.length = jsonStr.len
+  self.index = 0
+  self.tokenStart = null
+  self.line = 1
+  self.lineStart = 0
+  self.errors = []
+
+  return self
+end function
+
+Tokenizer.itemAt = function(offset = 0)
+  if (self.jsonStr.len <= self.index + offset) then
+    return null
+  end if
+
+  return self.jsonStr[self.index + offset]
+end function
+
+Tokenizer.isNotEOF = function
+  return self.index < self.length
+end function
+
+Tokenizer.nextLine = function
+  self.line += 1
+  return self.line
+end function
+
+Tokenizer.nextIndex = function(offset = 1)
+  self.index += offset
+  return self.index
+end function
+
+Tokenizer.isStringEscaped = function
+  return CHARACTER.BACKSLASH == self.itemAt(-1)
+end function
+
+Tokenizer.isIdentifierStart = function(value)
+  item = self.itemAt
+  if (item == null) then return false
+  code = item.code
+  return ((code >= 65 and code <= 90) or (code >= 97 and code <= 122) or code == 95 or code >= 128)
+end function
+
+Tokenizer.isIdentifierPart = function(value)
+  item = self.itemAt
+  if (item == null) then return false
+  code = item.code
+  return ((code >= 65 and code <= 90) or (code >= 97 and code <= 122) or code == 95 or (code >= 48 and code <= 57) or code >= 128)
+end function
+
+Tokenizer.skipWhiteSpace = function
+  while (self.isNotEOF)
+    item = self.itemAt
+
+    if (item == CHARACTER.WHITESPACE) then
+      self.nextIndex
+    else
+      break
+    end if
+  end while
+end function
+
+Tokenizer.skipToNextLine = function
+  item = self.itemAt
+
+  while (item != CHARACTER.NEW_LINE and self.isNotEOF)
+    self.nextIndex
+    item = self.itemAt
+  end while
+
+  self.nextLine
+
+  return self.next
+end function
+
+Tokenizer.createEOL = function
+  return {
+    "type": TOKEN_TYPE.EOL,
+    "value": "",
+    "line": self.line,
+    "lineStart": self.lineStart,
+    "range": [self.tokenStart, self.index]
+  }
+end function
+
+Tokenizer.isDigit = function
+  item = self.itemAt
+  if (item == null) then return false
+  code = item.code
+  return code >= CHARACTER.NUMBER_0.code and code <= CHARACTER.NUMBER_9.code
+end function
+
+Tokenizer.readDecLiteral = function
+  while (self.isDigit) self.nextIndex
+  
+  foundFraction = false
+
+  if (CHARACTER.DOT == self.itemAt) then
+    foundFraction = true
+    self.nextIndex
+
+    while (self.isDigit) self.nextIndex
+  end if
+
+  notation = self.itemAt
+
+  if (notation == CHARACTER.LETTER_E or notation == CHARACTER.LETTER_e) then
+    self.nextIndex
+    operation = self.itemAt
+    if (operation == CHARACTER.MINUS or operation == CHARACTER.PLUS) then self.nextIndex
+
+    while (self.isDigit) self.nextIndex
+  end if
+
+  return {
+    "value": self.jsonStr[self.tokenStart: self.index].val,
+    "hasFractionPart": foundFraction
+  }
+end function
+
+Tokenizer.scan = function(item, nextItem, lastItem)
+  if (item == CHARACTER.QUOTE) then
+    return self.scanStringLiteral
+  else if ([
+    CHARACTER.SQUARE_BRACKETS_LEFT,
+    CHARACTER.SQUARE_BRACKETS_RIGHT,
+    CHARACTER.CURLY_BRACKETS_LEFT,
+    CHARACTER.CURLY_BRACKETS_RIGHT,
+    CHARACTER.COLON,
+    CHARACTER.COMMA
+
+  ].indexOf(item) != null) then
+    return self.scanPunctuator(item)
+  else if ([
+    CHARACTER.NUMBER_0, 
+    CHARACTER.NUMBER_1, 
+    CHARACTER.NUMBER_2, 
+    CHARACTER.NUMBER_3, 
+    CHARACTER.NUMBER_4, 
+    CHARACTER.NUMBER_5, 
+    CHARACTER.NUMBER_6, 
+    CHARACTER.NUMBER_7, 
+    CHARACTER.NUMBER_8, 
+    CHARACTER.NUMBER_9, 
+    CHARACTER.DOT
+  ].indexOf(item) != null) then
+    return self.scanNumericLiteral
+  end if
+end function
+
+Tokenizer.scanNumericLiteral = function
+  literal = self.readDecLiteral
+
+  return {
+    "type": TOKEN_TYPE.NumericLiteral,
+    "value": literal.value,
+    "line": self.line,
+    "lineStart": self.lineStart,
+    "range": [self.tokenStart, self.index]
+  }
+end function
+
+Tokenizer.scanPunctuator = function(value)
+  self.index = self.index + value.len
+
+  return {
+    "type": TOKEN_TYPE.Punctuator,
+    "value": value,
+    "line": self.line,
+    "lineStart": self.lineStart,
+    "range": [self.tokenStart, self.index]
+  }
+end function
+
+Tokenizer.scanStringLiteral = function
+  beginLine = self.line
+  beginLineStart = self.lineStart
+  stringStart = self.index + 1
+  str = ""
+
+  while (true)
+    self.nextIndex
+
+    code = self.itemAt
+
+    if (CHARACTER.NEW_LINE == code) then
+      line = beginLine
+      return self.raise("Unexpected new line at line " + line + ".", line)
+    else if (CHARACTER.QUOTE == code) then
+      if (not self.isStringEscaped) then
+        break
+      end if
+    else if (not self.isNotEOF) then
+      line = beginLine
+      return self.raise("Unexpected string ending at line " + line + ".", line)
+    end if
+  end while
+
+  self.nextIndex
+  value = self.jsonStr[stringStart: self.index - 1]
+  value = value.replace(CHARACTER.BACKSLASH + CHARACTER.QUOTE, CHARACTER.QUOTE)
+
+  return {
+    "type": TOKEN_TYPE.StringLiteral,
+    "value": value,
+    "line": beginLine,
+    "lineStart": beginLineStart,
+    "range": [self.tokenStart, self.index]
+  }
+end function
+
+Tokenizer.scanIdentifierOrKeyword = function
+  self.nextIndex
+
+  while (self.isIdentifierPart(self.itemAt))
+    self.nextIndex
+  end while
+
+  value = self.jsonStr[self.tokenStart: self.index]
+  type = null
+
+  if (value == "true" or value == "false") then
+    type = TOKEN_TYPE.BooleanLiteral
+    value = value == "true"
+  end if
+
+  return {
+    "type": type,
+    "value": value,
+    "line": self.line,
+    "lineStart": self.lineStart,
+    "range": [self.tokenStart, self.index]
+  }
+end function
+
+Tokenizer.next = function
+  self.skipWhiteSpace()
+
+  if (not self.isNotEOF()) then
+    return {
+      "type": TOKEN_TYPE.EOF,
+      "value": "",
+      "line": self.line,
+      "lineStart": self.lineStart,
+      "range": [self.index, self.index],
+    }
+  end if
+
+  item = self.itemAt
+  nextItem = self.itemAt(1)
+  lastItem = self.itemAt(2)
+
+  self.tokenStart = self.index
+
+  if (CHARACTER.NEW_LINE == item) then
+    token = self.createEOL
+
+    self.nextLine
+    self.lineStart = self.nextIndex
+
+    return token
+  end if
+
+  if (self.isIdentifierStart(item)) then return self.scanIdentifierOrKeyword
+
+  item = self.scan(item, nextItem, lastItem)
+
+  if (item) then
+    return item
+  end if
+
+  return self.raise("Invalid character " + item + " at line " + self.line + ".", self.line)
+end function
+
+Tokenizer.raise = function(message, line)
+    self.errors.push({
+      "message": message,
+      "line": line
+    });
+
+    self.skipToNextLine
+    return self.next
+end function

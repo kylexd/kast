@@ -1,0 +1,194 @@
+import_code("./modules/strings.gs")
+import_code("./modules/wifi.gs")
+import_code("./modules/cli.gs")
+
+// Define module: Kast
+if not globals.hasIndex("Kast") then globals.Kast = {}
+
+// -----------------------------------------------------------------------------
+// Command handlers
+// -----------------------------------------------------------------------------
+
+// Handles wifi:connect command execution.
+// @param options {map} Parsed option values.
+// @param args {array} Positional args.
+// @return {null}
+onWifiConnect = function(options, args)
+  id = null
+  cachedOnly = false
+  if args.len > 0 then id = args[0]
+  if options != null and options.hasIndex("cachedOnly") then
+    cachedOnly = options.cachedOnly
+  end if
+  Kast.wifi.connect(options.interface, id, cachedOnly)
+end function
+
+// Handles wifi:clear command execution.
+// @param options {map} Parsed option values.
+// @param args {array} Positional args.
+// @return {null}
+onWifiClear = function(options, args)
+  Kast.wifi.clearCache
+end function
+
+// Handles wifi:list command execution.
+// @param options {map} Parsed option values.
+// @param args {array} Positional args.
+// @return {null}
+onWifiList = function(options, args)
+  interface = "wlan0"
+  id = null
+  showAll = false
+
+  if options != null and options.hasIndex("all") then
+    showAll = options.all
+  end if
+
+  if args.len > 0 then interface = args[0]
+  if args.len > 1 then id = args[1]
+
+  availableNetworks = Kast.wifi.list(interface, id)
+
+  // Build cache lookup by BSSID so we can show known passwords.
+  cachedByBssid = {}
+  cachedRows = Kast.db.select("wifi_networks", null)
+  if cachedRows != null then
+    for row in cachedRows
+      if row != null and row.hasIndex("bssid") then
+        cachedPwd = ""
+        if row.hasIndex("pwd") and row.pwd != null then cachedPwd = str(row.pwd)
+        cachedByBssid[str(row.bssid)] = cachedPwd
+      end if
+    end for
+  end if
+
+  essidHeader = "ESSID"
+  bssidHeader = "BSSID"
+  pwrHeader = "PWR"
+  pwdHeader = "PASSWORD"
+
+  essidWidth = essidHeader.len
+  bssidWidth = bssidHeader.len
+  pwrWidth = pwrHeader.len
+  pwdWidth = pwdHeader.len
+
+  for network in availableNetworks
+    essidText = str(network.essid)
+    if essidText == "" then essidText = "<hidden>"
+    bssidText = str(network.bssid)
+    pwrText = str(network.pwr) + "%"
+    pwdText = ""
+    if cachedByBssid.hasIndex(bssidText) then pwdText = str(cachedByBssid[bssidText])
+
+    if not showAll and pwdText == "" then
+      continue
+    end if
+
+    if essidText.len > essidWidth then essidWidth = essidText.len
+    if bssidText.len > bssidWidth then bssidWidth = bssidText.len
+    if pwrText.len > pwrWidth then pwrWidth = pwrText.len
+    if pwdText.len > pwdWidth then pwdWidth = pwdText.len
+  end for
+
+  visibleCount = 0
+  for network in availableNetworks
+    bssidText = str(network.bssid)
+    pwdText = ""
+    if cachedByBssid.hasIndex(bssidText) then pwdText = str(cachedByBssid[bssidText])
+    if showAll or pwdText != "" then visibleCount += 1
+  end for
+
+  if visibleCount == 0 then
+    if showAll then
+      print("No WiFi networks found.")
+    else
+      print("No cached WiFi passwords found for visible networks. Use --all to show all networks.")
+    end if
+    return 
+  end if
+
+  print(Kast.strings.padRight(essidHeader, essidWidth) + "  " + Kast.strings.padRight(bssidHeader, bssidWidth) + "  " + Kast.strings.padRight(pwrHeader, pwrWidth) + "  " + Kast.strings.padRight(pwdHeader, pwdWidth))
+
+  for network in availableNetworks
+    essidText = str(network.essid)
+    if essidText == "" then essidText = "<hidden>"
+    bssidText = str(network.bssid)
+    pwrText = str(network.pwr) + "%"
+    pwdText = ""
+    if cachedByBssid.hasIndex(bssidText) then pwdText = str(cachedByBssid[bssidText])
+
+    if not showAll and pwdText == "" then
+      continue
+    end if
+
+    print(Kast.strings.padRight(essidText, essidWidth) + "  " + Kast.strings.padRight(bssidText, bssidWidth) + "  " + Kast.strings.padRight(pwrText, pwrWidth) + "  " + Kast.strings.padRight(pwdText, pwdWidth))
+  end for
+end function
+
+// -----------------------------------------------------------------------------
+// Command registration
+// -----------------------------------------------------------------------------
+
+Kast.cli.command("wifi:connect", @onWifiConnect, {
+  "handler": "onWifiConnect",
+  "description": "Connects to a WiFi network.",
+  "usage": "kast wifi:connect [-c] [-i INTERFACE] [ID]",
+  "options": [
+    {
+      "name": "interface",
+      "short": "i",
+      "long": "interface",
+      "type": "string",
+      "default": "wlan0",
+      "description": "The network interface to use for connecting.",
+    },
+    {
+      "name": "cachedOnly",
+      "short": "c",
+      "long": "cached-only",
+      "type": "boolean",
+      "default": false,
+      "description": "Only use cached credentials when available.",
+    },
+  ],
+  "args": [ {
+    "name": "id",
+    "description": "Optional BSSID or ESSID to filter the networks.",
+  } ],
+})
+
+Kast.cli.command("wifi:clear", @onWifiClear, {
+  "handler": "onWifiClear",
+  "description": "Clears the cached WiFi networks stored in the local database.",
+  "usage": "kast wifi:clear",
+})
+
+Kast.cli.command("wifi:list", @onWifiList, {
+  "handler": "onWifiList",
+  "description": "Lists the available WiFi networks.",
+  "usage": "kast wifi:list [-a] [INTERFACE] [ID]",
+  "options": [ {
+    "name": "all",
+    "short": "a",
+    "long": "all",
+    "type": "boolean",
+    "default": false,
+    "description": "Include networks even when no cached password is known.",
+  } ],
+  "args": [
+    {
+      "name": "interface",
+      "description": "The network interface to use for scanning (default: wlan0).",
+    },
+    {
+      "name": "id",
+      "description": "Optional BSSID or ESSID to filter the listed networks.",
+    },
+  ],
+})
+
+// -----------------------------------------------------------------------------
+// Bootstrap
+// -----------------------------------------------------------------------------
+
+Kast.cli.bootstrap
